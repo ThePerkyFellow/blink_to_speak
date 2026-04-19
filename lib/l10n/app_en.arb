@@ -1,0 +1,149 @@
+{
+  "@@locale": "en",
+  "appTitle": "Blink to Speak",
+  "@appTitle": { "description": "App name" },
+
+  "interpretMyBlink": "Interpret my blink",
+  "@interpretMyBlink": { "description": "Home screen main action" },
+
+  "practiceScreen": "Practice screen",
+  "@practiceScreen": { "description": "Home screen practice button" },
+
+  "personalizeMessages": "Personalize messages",
+  "@personalizeMessages": { "description": "Home screen caregiver setup" },
+
+  "settings": "Settings",
+  "@settings": { "description": "Settings screen title" },
+
+  "guidebook": "Blink to Speak Guidebook",
+  "@guidebook": { "description": "Link to guidebook" },
+
+  "ourServices": "Our services",
+  "@ourServices": { "description": "Section header" },
+
+  "contactUs": "Contact us",
+  "@contactUs": { "description": "Contact link" },
+
+  "back": "Back",
+  "@back": { "description": "Back navigation" },
+
+  "yes": "YES",
+  "@yes": { "description": "YES button label" },
+
+  "no": "NO",
+  "@no": { "description": "NO button label" },
+
+  "oneBlink": "1 blink",
+  "@oneBlink": { "description": "1 blink label" },
+
+  "twoBlinks": "2 blinks",
+  "@twoBlinks": { "description": "2 blinks label" },
+
+  "allowCameraAccess": "Allow camera access",
+  "@allowCameraAccess": { "description": "Permission dialog title" },
+
+  "cameraPermissionReason": "Please allow access to your device's camera which is required for blink interpretation on this app.",
+  "@cameraPermissionReason": { "description": "Permission rationale" },
+
+  "blinkToStart": "BLINK TO START",
+  "@blinkToStart": { "description": "Start button on splash" },
+
+  "interpretation": "Interpretation",
+  "@interpretation": { "description": "Interpret screen section title" },
+
+  "detectedMessage": "Detected Message",
+  "@detectedMessage": { "description": "Output card header" },
+
+  "waitingForGesture": "Waiting for gesture...",
+  "@waitingForGesture": { "description": "Idle state label" },
+
+  "gestureBuffer": "Gesture buffer",
+  "@gestureBuffer": { "description": "Buffer display label" },
+
+  "longShutToStart": "Long shut eyes to begin",
+  "@longShutToStart": { "description": "Instruction on interpret screen" },
+
+  "emergency": "EMERGENCY",
+  "@emergency": { "description": "Emergency alert title" },
+
+  "emergencyMessage": "Emergency signal detected! Alerting caregiver.",
+  "@emergencyMessage": { "description": "Emergency message body" },
+
+  "dismiss": "Dismiss",
+  "@dismiss": { "description": "Dismiss button" },
+
+  "caregiverSetup": "Caregiver Setup",
+  "@caregiverSetup": { "description": "Caregiver screen title" },
+
+  "commandList": "Command List",
+  "@commandList": { "description": "List screen title" },
+
+  "editCommand": "Edit Command",
+  "@editCommand": { "description": "Edit screen title" },
+
+  "addCustomCommand": "Add Custom Command",
+  "@addCustomCommand": { "description": "Add button" },
+
+  "gestureSequence": "Gesture Sequence",
+  "@gestureSequence": { "description": "Section label" },
+
+  "messageText": "Message Text",
+  "@messageText": { "description": "Section label" },
+
+  "save": "Save",
+  "@save": { "description": "Save button" },
+
+  "cancel": "Cancel",
+  "@cancel": { "description": "Cancel button" },
+
+  "delete": "Delete",
+  "@delete": { "description": "Delete button" },
+
+  "resetToDefault": "Reset to Default",
+  "@resetToDefault": { "description": "Reset button" },
+
+  "language": "Language",
+  "@language": { "description": "Settings label" },
+
+  "sensitivity": "Detection Sensitivity",
+  "@sensitivity": { "description": "Settings label" },
+
+  "speechRate": "Speech Rate",
+  "@speechRate": { "description": "Settings label" },
+
+  "patientName": "Patient Name",
+  "@patientName": { "description": "Settings label" },
+
+  "practiceMode": "Practice Mode",
+  "@practiceMode": { "description": "Practice screen title" },
+
+  "practiceInstruction": "Practice your eye gestures — no messages will be spoken.",
+  "@practiceInstruction": { "description": "Practice mode subtitle" },
+
+  "categoryBasics": "Basics",
+  "@categoryBasics": { "description": "Command category" },
+
+  "categoryNeeds": "Needs",
+  "@categoryNeeds": { "description": "Command category" },
+
+  "categoryHealth": "Health",
+  "@categoryHealth": { "description": "Command category" },
+
+  "categoryEmergency": "Emergency",
+  "@categoryEmergency": { "description": "Command category" },
+
+  "categoryEmotional": "Emotional",
+  "@categoryEmotional": { "description": "Command category" },
+
+  "categorySocial": "Social",
+  "@categorySocial": { "description": "Command category" },
+
+  "categoryUtility": "Utility",
+  "@categoryUtility": { "description": "Command category" },
+
+  "categoryComfort": "Comfort",
+  "@categoryComfort": { "description": "Command category" },
+
+  "categoryCustom": "Custom",
+  "@categoryCustom": { "description": "Command category" }
+}

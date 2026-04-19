@@ -1,0 +1,61 @@
+name: blink_to_speak
+description: Blink to Speak — Eye sign language communication app for MND/ALS patients by Asha Ek Hope Foundation.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # Camera feed
+  camera: any
+
+  # Face detection (primary: MediaPipe 478-pt via ML Kit Tasks)
+  google_mlkit_face_detection: any
+
+  # Text to speech (multilingual, offline)
+  flutter_tts: any
+
+  # State management
+  provider: any
+
+  # Navigation
+  go_router: any
+
+  # Persistence
+  shared_preferences: any
+  sqflite: any
+  path: any
+
+  # Localization
+  intl: any
+
+  # Utilities
+  permission_handler: any
+  vibration: any
+  uuid: any
+  collection: any
+
+  cupertino_icons: any
+  google_mlkit_face_mesh_detection: ^0.4.1
+  url_launcher: ^6.3.0
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  generate: true
+
+  uses-material-design: true
+
+  assets:
+    - assets/encodings/
+
