@@ -84,6 +84,9 @@ The app follows a structured gesture language. For example:
    ```
 
 ---
+<img width="2560" height="1440" alt="image" src="https://github.com/user-attachments/assets/7638f039-b1de-43ae-bcd3-5b466df98fa4" />
+
+
 
 ## ❤️ Acknowledgements
 This project is inspired by the incredible work of the **Asha Ek Hope Foundation**. Their dedication to ALS patients and the creation of the [Blink to Speak Guidebook](https://ashaekhope.com/blink-to-speak/) laid the foundation for this digital implementation.
