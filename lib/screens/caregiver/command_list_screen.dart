@@ -64,7 +64,8 @@ class CommandListScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
                 child: Row(
                   children: [
-                    Icon(_categoryIcons[cat] ?? Icons.category, size: 16, color: cs.primary),
+                    Icon(_categoryIcons[cat] ?? Icons.category,
+                        size: 16, color: cs.primary),
                     const SizedBox(width: 6),
                     Text(cat.toUpperCase(),
                         style: TextStyle(
@@ -92,7 +93,11 @@ class _CommandRow extends StatelessWidget {
   final String locale;
   final VoidCallback onEdit;
 
-  const _CommandRow({required this.command, required this.locale, required this.onEdit});
+  const _CommandRow({
+    required this.command,
+    required this.locale,
+    required this.onEdit,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -105,37 +110,77 @@ class _CommandRow extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        leading: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: cs.primary.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(command.sequenceLabel,
-              style: TextStyle(
-                fontWeight: FontWeight.w800, fontSize: 12, color: cs.primary,
-              )),
-        ),
-        title: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
           children: [
-            Switch(
-              value: command.isEnabled,
-              onChanged: (v) {
-                command.isEnabled = v;
-                context.read<AppState>().saveCommand(command);
-              },
-              activeColor: cs.primary,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            // ── Sequence badge — auto-width, max 110px ──────────────────
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 40, maxWidth: 110),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: cs.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  command.sequenceLabel,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11,
+                    color: cs.primary,
+                  ),
+                  textAlign: TextAlign.center,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
-            IconButton(
-              icon: Icon(Icons.edit_rounded, size: 18, color: cs.onSurface.withOpacity(0.5)),
-              onPressed: onEdit,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
+            const SizedBox(width: 12),
+
+            // ── Message label — takes all remaining space ──
+            Expanded(
+              child: Text(
+                msg,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 4),
+
+            // ── Controls — fixed width so they never push text ──
+            SizedBox(
+              width: 88,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Transform.scale(
+                    scale: 0.80,
+                    child: Switch(
+                      value: command.isEnabled,
+                      onChanged: (v) {
+                        command.isEnabled = v;
+                        context.read<AppState>().saveCommand(command);
+                      },
+                      activeColor: cs.primary,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: onEdit,
+                    child: Icon(
+                      Icons.edit_rounded,
+                      size: 18,
+                      color: cs.onSurface.withOpacity(0.45),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

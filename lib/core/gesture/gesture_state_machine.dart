@@ -21,7 +21,7 @@ class DetectionThresholds {
     this.earThreshold       = 0.25,
     this.shutMinMs          = 1200,
     this.blinkMaxMs         = 1000,
-    this.gazeThreshold      = 0.30,
+    this.gazeThreshold      = 0.18,  // lowered from 0.30 — more sensitive to direction
     this.furiousBlinkCount  = 5,
     this.furiousBlinkWindowMs = 2000,
   });
@@ -38,10 +38,13 @@ enum _MachineState { waitingForStart, recording }
 ///   RECORDING → Furious blink (5+ blinks in 2s) → clears buffer
 ///   Furious wink → emits EMERGENCY immediately
 class GestureStateMachine {
-  final DetectionThresholds thresholds;
+  DetectionThresholds _thresholds;
+  /// Current thresholds — may be updated at runtime via [updateEarThreshold].
+  DetectionThresholds get thresholds => _thresholds;
   final RollDetector rollDetector = RollDetector();
 
-  GestureStateMachine({this.thresholds = const DetectionThresholds()});
+  GestureStateMachine({DetectionThresholds thresholds = const DetectionThresholds()})
+      : _thresholds = thresholds;
 
   // ---- Streams ----
   final _gestureController   = StreamController<GestureEvent>.broadcast();
@@ -66,6 +69,11 @@ class GestureStateMachine {
   bool _isGazeNeutral = true;
   DateTime? _lastGazeEvent;
   static const _gazeDebounceMs = 600;
+
+  // Gaze hold: direction must be sustained for this long before firing
+  DateTime? _gazeHeldSince;
+  String _gazeHeldDir = '';
+  static const _gazeSustainMs = 350;
 
   // Dynamic baseline for gaze
   double _baselineGazeX = 0.0;
@@ -93,12 +101,40 @@ class GestureStateMachine {
     rollDetector.addSample(data.irisX, data.irisY);
 
     final now = DateTime.now();
-    final bothClosed = data.leftEAR < thresholds.earThreshold &&
-                       data.rightEAR < thresholds.earThreshold;
-    final onlyLeftClosed  = data.leftEAR  < thresholds.earThreshold &&
-                            data.rightEAR > thresholds.earThreshold + 0.05;
-    final onlyRightClosed = data.rightEAR < thresholds.earThreshold &&
-                            data.leftEAR  > thresholds.earThreshold + 0.05;
+
+    // ── Eye-close detection via neural probabilities (Phase 1 upgrade) ──────
+    // eyeOpenProbLeft/Right: 0.0 = closed, 1.0 = open (ML Kit FaceDetector).
+    // When the CombinedDetector is not active these default to 1.0, so the
+    // EAR-based path below acts as a safe fallback.
+    final useProb = data.eyeOpenProbLeft != 1.0 || data.eyeOpenProbRight != 1.0;
+
+    final bool leftEyeClosed;
+    final bool rightEyeClosed;
+
+    if (useProb) {
+      // Neural probability path — pose-corrected, no threshold calibration needed
+      leftEyeClosed  = data.eyeOpenProbLeft  < 0.25;
+      rightEyeClosed = data.eyeOpenProbRight < 0.25;
+    } else {
+      // Legacy EAR fallback (used when CombinedDetector not available)
+      leftEyeClosed  = data.leftEAR  < thresholds.earThreshold;
+      rightEyeClosed = data.rightEAR < thresholds.earThreshold;
+    }
+
+    final bothClosed = leftEyeClosed && rightEyeClosed;
+
+    // Wink: one eye closed, other clearly open.
+    // Probability differential (>= 0.40 gap) is far more reliable than EAR margin.
+    final onlyLeftClosed = leftEyeClosed && (
+      useProb
+          ? data.eyeOpenProbRight >= 0.65
+          : data.rightEAR > thresholds.earThreshold + 0.03
+    );
+    final onlyRightClosed = rightEyeClosed && (
+      useProb
+          ? data.eyeOpenProbLeft >= 0.65
+          : data.leftEAR > thresholds.earThreshold + 0.03
+    );
 
     // We no longer wait for a "long shut" to start. We are always recording.
     // If not recording, force it.
@@ -175,24 +211,37 @@ class GestureStateMachine {
       if (_isGazeNeutral) {
         final lastGaze = _lastGazeEvent;
         final elapsed = lastGaze == null ? 9999 : now.difference(lastGaze).inMilliseconds;
-        
+
         if (elapsed > _gazeDebounceMs) {
-          if (relGazeX < -thresholds.gazeThreshold) {
-            _addToBuffer(GestureEvent.L); 
-            _lastGazeEvent = now;
-            _isGazeNeutral = false;
-          } else if (relGazeX > thresholds.gazeThreshold) {
-            _addToBuffer(GestureEvent.R); 
-            _lastGazeEvent = now;
-            _isGazeNeutral = false;
-          } else if (relGazeY < -thresholds.gazeThreshold) {
-            _addToBuffer(GestureEvent.U); 
-            _lastGazeEvent = now;
-            _isGazeNeutral = false;
-          } else if (relGazeY > thresholds.gazeThreshold) {
-            _addToBuffer(GestureEvent.D); 
-            _lastGazeEvent = now;
-            _isGazeNeutral = false;
+          // Determine candidate direction
+          String candidate = '';
+          if (relGazeX < -thresholds.gazeThreshold)       candidate = 'L';
+          else if (relGazeX > thresholds.gazeThreshold)   candidate = 'R';
+          else if (relGazeY < -thresholds.gazeThreshold)  candidate = 'U';
+          else if (relGazeY > thresholds.gazeThreshold)   candidate = 'D';
+
+          if (candidate.isEmpty) {
+            // Back inside threshold — reset hold
+            _gazeHeldSince = null;
+            _gazeHeldDir = '';
+          } else {
+            if (candidate != _gazeHeldDir) {
+              // New direction — start timer
+              _gazeHeldSince = now;
+              _gazeHeldDir   = candidate;
+            } else if (now.difference(_gazeHeldSince!).inMilliseconds >= _gazeSustainMs) {
+              // Held long enough — fire!
+              _gazeHeldSince = null;
+              _gazeHeldDir   = '';
+              _lastGazeEvent = now;
+              _isGazeNeutral = false;
+              switch (candidate) {
+                case 'L': _addToBuffer(GestureEvent.L);
+                case 'R': _addToBuffer(GestureEvent.R);
+                case 'U': _addToBuffer(GestureEvent.U);
+                case 'D': _addToBuffer(GestureEvent.D);
+              }
+            }
           }
         }
       }
@@ -272,10 +321,24 @@ class GestureStateMachine {
     _resolveTimer?.cancel();
   }
 
-  /// Manually wipe the buffer and return to waiting state.
+  /// Wipe the buffer and return to waiting state.
   void resetToWaiting() {
     resetBuffer();
     _setState(_MachineState.waitingForStart);
+  }
+
+  /// Updates only the EAR threshold, preserving all other thresholds.
+  /// Called once the detector's adaptive calibration completes so the state
+  /// machine and detector share the same per-user threshold value.
+  void updateEarThreshold(double newThreshold) {
+    _thresholds = DetectionThresholds(
+      earThreshold:        newThreshold,
+      shutMinMs:           _thresholds.shutMinMs,
+      blinkMaxMs:          _thresholds.blinkMaxMs,
+      gazeThreshold:       _thresholds.gazeThreshold,
+      furiousBlinkCount:   _thresholds.furiousBlinkCount,
+      furiousBlinkWindowMs: _thresholds.furiousBlinkWindowMs,
+    );
   }
 
   final _resolvedController = StreamController<List<GestureEvent>>.broadcast();

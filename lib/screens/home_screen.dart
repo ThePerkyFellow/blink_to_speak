@@ -50,12 +50,7 @@ class HomeScreen extends StatelessWidget {
             children: [
               const SizedBox(height: 8),
               // ---- Main menu tiles ----
-              _MenuTile(
-                icon: Icons.remove_red_eye_outlined,
-                label: 'Interpret my blink',
-                color: const Color(0xFF4A6CF7),
-                onTap: () => context.push('/interpret'),
-              ),
+
               _MenuTile(
                 icon: Icons.fitness_center_rounded,
                 label: 'Practice screen',
@@ -88,10 +83,12 @@ class HomeScreen extends StatelessWidget {
                   trailing: Icon(Icons.open_in_new_rounded,
                       size: 18, color: cs.onSurface.withOpacity(0.4)),
                   onTap: () async {
-                    final uri = Uri.parse('https://ashaekhope.com/blink-to-speak/');
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(uri);
-                    }
+                    final uri = Uri.parse(
+                        'https://ashaekhope.com/blink-to-speak/');
+                    await launchUrl(
+                      uri,
+                      mode: LaunchMode.externalApplication,
+                    );
                   },
                 ),
               ),

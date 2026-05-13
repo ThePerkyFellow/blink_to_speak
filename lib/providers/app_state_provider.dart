@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:camera/camera.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/detection/face_detector_interface.dart';
+import '../core/detection/combined_detector.dart';
 import '../core/detection/mediapipe_detector.dart';
 import '../core/detection/mlkit_detector.dart';
+import '../core/detection/gesture_recorder.dart';
 import '../core/gesture/gesture_state_machine.dart';
 import '../core/gesture/gesture_engine.dart';
 import '../core/gesture/gesture_event.dart';
@@ -13,7 +16,7 @@ import '../core/gesture/gesture_event.dart';
 import '../core/tts/tts_service.dart';
 import '../models/blink_command.dart';
 
-class AppState extends ChangeNotifier {
+class AppState extends ChangeNotifier with WidgetsBindingObserver {
   // ---- Camera ----
   CameraController? cameraController;
   bool cameraReady = false;
@@ -34,6 +37,9 @@ class AppState extends ChangeNotifier {
   bool   emergencyActive = false;
   double earThreshold   = 0.25;
   double speechRate     = 0.5;
+  // Tracks whether the adaptive EAR threshold has been synced to the state
+  // machine for this calibration session.
+  bool _thresholdSynced = false;
 
   // ---- Supported languages ----
   static const supportedLocales = [
@@ -46,10 +52,13 @@ class AppState extends ChangeNotifier {
   ];
 
   Future<void> init() async {
+    print('[AppState] Starting init()...');
     await _loadPrefs();
     await _initEngine();
     await _initTts();
     await _initCamera();
+    print('[AppState] init() complete.');
+    WidgetsBinding.instance.addObserver(this); // lifecycle observer
   }
 
   Future<void> _loadPrefs() async {
@@ -112,16 +121,43 @@ class AppState extends ChangeNotifier {
 
     await cameraController!.initialize();
 
-    // Try primary detector, fall back on error
+    // Try CombinedDetector first (blend shapes + face mesh).
+    // Falls back to MediaPipeDetector (mesh only) then MlKitDetector.
     try {
-      _detector = MediaPipeDetector();
-      await _detector!.initialize();
-    } catch (_) {
-      _detector = MlKitDetector();
-      await _detector!.initialize();
+      print('[AppState] Initializing CombinedDetector...');
+      _detector = CombinedDetector();
+      await _detector!.initialize().timeout(const Duration(seconds: 10), onTimeout: () {
+        print('[AppState] CombinedDetector initialization timed out!');
+        throw Exception('CombinedDetector Init Timeout');
+      });
+      print('[AppState] CombinedDetector initialized.');
+    } catch (e, st) {
+      print('[AppState] CombinedDetector failed: $e\n$st');
+      try {
+        print('[AppState] Falling back to MediaPipeDetector...');
+        _detector = MediaPipeDetector();
+        await _detector!.initialize();
+      } catch (e2) {
+        print('[AppState] Falling back to MlKitDetector... $e2');
+        _detector = MlKitDetector();
+        await _detector!.initialize();
+      }
     }
 
-    _detector!.faceDataStream.listen(_stateMachine.process);
+    print('[AppState] Detector initialized successfully.');
+
+    _detector!.faceDataStream.listen((fd) {
+      // Once the detector's per-user adaptive calibration completes, push that
+      // threshold into the state machine so both layers agree on the same value.
+      if (!_thresholdSynced && _detector is MediaPipeDetector) {
+        final mp = _detector as MediaPipeDetector;
+        if (mp.isCalibrated) {
+          _stateMachine.updateEarThreshold(mp.adaptiveThreshold);
+          _thresholdSynced = true;
+        }
+      }
+      _stateMachine.process(fd);
+    });
 
     await cameraController!.startImageStream((img) {
       _detector!.processImage(img);
@@ -129,6 +165,35 @@ class AppState extends ChangeNotifier {
 
     cameraReady = true;
     notifyListeners();
+  }
+
+  // ── App lifecycle — pause/resume camera stream ────────────────────────────
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final ctrl = cameraController;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      // Phone locked or app backgrounded — stop the image stream to free GPU
+      if (ctrl.value.isStreamingImages) {
+        ctrl.stopImageStream();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      // App foregrounded again — restart the stream so detection resumes
+      _restartImageStream();
+    }
+  }
+
+  void _restartImageStream() {
+    final ctrl = cameraController;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+    if (ctrl.value.isStreamingImages) return; // already running
+    try {
+      ctrl.startImageStream((img) {
+        _detector?.processImage(img);
+      });
+    } catch (_) {}
   }
 
   void _onSequenceResolved(List<GestureEvent> sequence) {
@@ -195,13 +260,24 @@ class AppState extends ChangeNotifier {
   double get baselineGazeY => _stateMachine.baselineGazeY;
   double get gazeThreshold => _stateMachine.thresholds.gazeThreshold;
 
-  // Calibration status for HUD
-  bool get isEarCalibrated => (_detector is MediaPipeDetector)
-      ? (_detector as MediaPipeDetector).isCalibrated
-      : true;
-  double get adaptiveEarThreshold => (_detector is MediaPipeDetector)
-      ? (_detector as MediaPipeDetector).adaptiveThreshold
-      : earThreshold;
+  bool get isEarCalibrated =>
+      (_detector is CombinedDetector)
+          ? (_detector as CombinedDetector).isCalibrated
+          : (_detector is MediaPipeDetector)
+              ? (_detector as MediaPipeDetector).isCalibrated
+              : true;
+
+  double get adaptiveEarThreshold =>
+      (_detector is CombinedDetector)
+          ? (_detector as CombinedDetector).adaptiveThreshold
+          : (_detector is MediaPipeDetector)
+              ? (_detector as MediaPipeDetector).adaptiveThreshold
+              : earThreshold;
+
+  // ── Gesture Recording (Data Collection) ────────────────────────────────────
+  GestureRecorder? get gestureRecorder => (_detector is CombinedDetector)
+      ? (_detector as CombinedDetector).recorder
+      : null;
 
   Future<void> saveCommand(BlinkCommand cmd) async {
     final prefs = await SharedPreferences.getInstance();
@@ -230,11 +306,13 @@ class AppState extends ChangeNotifier {
   }
 
   void resetCalibration() {
+    _thresholdSynced = false;
     _detector?.resetCalibration();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     cameraController?.dispose();
     _detector?.dispose();
     _stateMachine.dispose();

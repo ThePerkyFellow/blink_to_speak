@@ -17,6 +17,10 @@ class MediaPipeDetector implements FaceDetectorInterface {
   late FaceMeshDetector _detector;
   final _controller = StreamController<FaceData>.broadcast();
   bool _isProcessing = false;
+  int _frameCounter = 0;
+  // Process every 2nd frame (~15 fps load). Gives ML Kit full time budget
+  // per frame so the consecutive-frame gate operates on regular intervals.
+  static const _processEveryNFrames = 2;
 
   // ── Temporal smoothing ──────────────────────────────────────────────────
   final _leftEarQueue  = Queue<double>();
@@ -41,10 +45,40 @@ class MediaPipeDetector implements FaceDetectorInterface {
   bool   get isCalibrated      => _calibrated;
   double get adaptiveThreshold => _adaptiveThreshold;
 
-  // ── Gaze baseline ──────────────────────────────────────────────────────
+  // ── Gaze baseline ──────────────────────────────────────────────────────────
   double _gazeCentroidBaseX = 0.5;
   double _gazeCentroidBaseY = 0.5;
   bool _gazeBaselineReady = false;
+  // Sensitivity: pupil moves ~20-25% of eye width for deliberate looks.
+  // Higher = less sensitive (fewer false fires for off-axis camera angle).
+  static const _gazeSensitivity = 0.22;
+  DateTime? _gazeHeldSince;
+  static const _gazeSustainMs = 300;
+
+  // ── Camera-above-screen gaze normalization (≈ Apple Eye Contact Correction) ────
+  // Camera sits above screen. User's neutral gaze (looking at screen) appears
+  // downward-offset to camera. This creates asymmetric vertical range:
+  //   • Up from neutral  → large range available  → scale DOWN (0.80)
+  //   • Down from neutral → small range remaining → scale UP  (1.35)
+  // Horizontal (X) unaffected — camera is horizontally centered.
+  static const _yGainDown = 1.35;
+  static const _yGainUp   = 0.80;
+  // Slow continuous drift correction: re-weights baseline toward neutral gaze
+  // at rate per frame. Adapts to head pose shifts mid-session.
+  static const _baselineDriftRate = 0.008;
+
+  // ── Landmark-level smoothing (applied BEFORE EAR computation) ──────────
+  // Smoothing landmark positions removes jitter at the source rather than
+  // masking it downstream with scalar EAR smoothing.
+  static const _landmarkSmoothFrames = 3;
+  // Left eye: P1=33, P4=133, P2=160, P3=158, P6=144, P5=153
+  final _llP1 = Queue<Offset>(); final _llP4 = Queue<Offset>();
+  final _llP2 = Queue<Offset>(); final _llP3 = Queue<Offset>();
+  final _llP6 = Queue<Offset>(); final _llP5 = Queue<Offset>();
+  // Right eye: P1=362, P4=263, P2=384, P3=387, P6=380, P5=373
+  final _rlP1 = Queue<Offset>(); final _rlP4 = Queue<Offset>();
+  final _rlP2 = Queue<Offset>(); final _rlP3 = Queue<Offset>();
+  final _rlP6 = Queue<Offset>(); final _rlP5 = Queue<Offset>();
 
   @override
   String get engineName => 'MLKit FaceMesh (468 pts)';
@@ -64,6 +98,11 @@ class MediaPipeDetector implements FaceDetectorInterface {
 
   @override
   Future<void> processImage(dynamic cameraImage) async {
+    // ── Frame skipping ─────────────────────────────────────────────────────
+    // Intentionally process only every Nth frame so ML Kit always has a full
+    // time budget. Prevents backlog that corrupts the consecutive-frame gate.
+    _frameCounter++;
+    if (_frameCounter % _processEveryNFrames != 0) return;
     if (_isProcessing || cameraImage is! CameraImage) return;
     _isProcessing = true;
     try {
@@ -87,17 +126,29 @@ class MediaPipeDetector implements FaceDetectorInterface {
         return;
       }
 
-      // ── Left Eye (User's Left) ──
-      // Corners: 33 (inner/medial), 133 (outer/lateral)
-      // Top: 160, 158
-      // Bottom: 144, 153
-      final rawLeft = _earFromMesh(pts, 33, 133, 160, 158, 144, 153);
-      
-      // ── Right Eye (User's Right) ──
-      // Corners: 362 (inner/medial), 263 (outer/lateral)
-      // Top: 384, 387
-      // Bottom: 380, 373
-      final rawRight = _earFromMesh(pts, 362, 263, 384, 387, 380, 373);
+      // ── Left Eye (User's Left) — smooth landmarks then compute EAR ──
+      // Corners: 33 (inner/medial canthus), 133 (outer/lateral canthus)
+      // Top: 160, 158 | Bottom: 144, 153
+      final rawLeft = _earFromSmoothed(
+        _smoothLandmark(_llP1, pts[33].x,  pts[33].y),
+        _smoothLandmark(_llP4, pts[133].x, pts[133].y),
+        _smoothLandmark(_llP2, pts[160].x, pts[160].y),
+        _smoothLandmark(_llP3, pts[158].x, pts[158].y),
+        _smoothLandmark(_llP6, pts[144].x, pts[144].y),
+        _smoothLandmark(_llP5, pts[153].x, pts[153].y),
+      );
+
+      // ── Right Eye (User's Right) — smooth landmarks then compute EAR ──
+      // Corners: 362 (inner/medial canthus), 263 (outer/lateral canthus)
+      // Top: 384, 387 | Bottom: 380, 373
+      final rawRight = _earFromSmoothed(
+        _smoothLandmark(_rlP1, pts[362].x, pts[362].y),
+        _smoothLandmark(_rlP4, pts[263].x, pts[263].y),
+        _smoothLandmark(_rlP2, pts[384].x, pts[384].y),
+        _smoothLandmark(_rlP3, pts[387].x, pts[387].y),
+        _smoothLandmark(_rlP6, pts[380].x, pts[380].y),
+        _smoothLandmark(_rlP5, pts[373].x, pts[373].y),
+      );
 
       // ── Calibration ──────────────────────────────────────────────────────
       if (!_calibrated) {
@@ -178,20 +229,35 @@ class MediaPipeDetector implements FaceDetectorInterface {
       // This ensures the baseline is built during the 3-second 'Calibrating' banner
       // when the user is explicitly looking at the screen.
       if (!_calibrated) {
+        // Fast initial convergence during EAR calibration
         _gazeCentroidBaseX = (_gazeCentroidBaseX * 0.85) + (normX * 0.15);
         _gazeCentroidBaseY = (_gazeCentroidBaseY * 0.85) + (normY * 0.15);
       } else {
         _gazeBaselineReady = true;
+        // Slow continuous drift correction post-calibration.
+        // Only drift when gaze is near center (user likely looking at screen =
+        // their neutral pose). Prevents active directional looks from corrupting baseline.
+        if (normX.abs() < 0.15 && normY.abs() < 0.15) {
+          _gazeCentroidBaseX += (normX - _gazeCentroidBaseX) * _baselineDriftRate;
+          _gazeCentroidBaseY += (normY - _gazeCentroidBaseY) * _baselineDriftRate;
+        }
       }
 
       if (_gazeBaselineReady) {
         // Front camera is mirrored: negate X so looking left goes left on screen
-        // Sensitivity scalar: pupil generally moves maybe 20-30% of eye width
-        final rawGazeX = -((normX - _gazeCentroidBaseX) / 0.18).clamp(-1.0, 1.0);
-        final rawGazeY =  ((normY - _gazeCentroidBaseY) / 0.18).clamp(-1.0, 1.0);
+        final rawGazeX = -((normX - _gazeCentroidBaseX) / _gazeSensitivity).clamp(-1.0, 1.0);
+        final rawGazeY =  ((normY - _gazeCentroidBaseY) / _gazeSensitivity).clamp(-1.0, 1.0);
 
-        gazeX = _smoothGaze(_gazeXQueue, rawGazeX);
-        gazeY = _smoothGaze(_gazeYQueue, rawGazeY);
+        final smoothX = _smoothGaze(_gazeXQueue, rawGazeX);
+        final smoothY = _smoothGaze(_gazeYQueue, rawGazeY);
+
+        // ── Asymmetric Y-gain: camera-above-screen normalization ────────────────
+        // Amplify downward gaze (less room below neutral when screen is below camera)
+        // Reduce upward gaze (more natural range above neutral toward camera)
+        gazeX = smoothX; // horizontal: no correction needed
+        gazeY = smoothY >= 0
+            ? (smoothY * _yGainDown).clamp(-1.0, 1.0)  // looking down
+            : (smoothY * _yGainUp).clamp(-1.0, 1.0);   // looking up
       }
 
       _controller.add(FaceData(
@@ -214,15 +280,6 @@ class MediaPipeDetector implements FaceDetectorInterface {
     } finally {
       _isProcessing = false;
     }
-  }
-
-  double _earFromMesh(List<FaceMeshPoint> pts, int p1, int p4, int p2, int p3, int p6, int p5) {
-    // Note: p1=inner, p4=outer. p2,p3=top. p6,p5=bottom.
-    final A = _dist(pts[p2], pts[p6]);
-    final B = _dist(pts[p3], pts[p5]);
-    final C = _dist(pts[p1], pts[p4]);
-    if (C < 1.0) return 0.0;
-    return (A + B) / (2.0 * C);
   }
 
   Offset _centroid(List<Offset> pts) {
@@ -276,6 +333,32 @@ class MediaPipeDetector implements FaceDetectorInterface {
     return sqrt(dx * dx + dy * dy);
   }
 
+  // ── Landmark smoothing helpers ────────────────────────────────────────────
+
+  /// Push a new landmark position into a rolling queue and return the average.
+  Offset _smoothLandmark(Queue<Offset> q, double x, double y) {
+    q.addLast(Offset(x, y));
+    if (q.length > _landmarkSmoothFrames) q.removeFirst();
+    double sx = 0, sy = 0;
+    for (final o in q) { sx += o.dx; sy += o.dy; }
+    return Offset(sx / q.length, sy / q.length);
+  }
+
+  /// EAR from pre-smoothed Offset landmarks (same formula, Offset distances).
+  double _earFromSmoothed(Offset p1, Offset p4, Offset p2, Offset p3, Offset p6, Offset p5) {
+    final A = _distOffset(p2, p6);
+    final B = _distOffset(p3, p5);
+    final C = _distOffset(p1, p4);
+    if (C < 1.0) return 0.0;
+    return (A + B) / (2.0 * C);
+  }
+
+  double _distOffset(Offset a, Offset b) {
+    final dx = a.dx - b.dx;
+    final dy = a.dy - b.dy;
+    return sqrt(dx * dx + dy * dy);
+  }
+
   InputImage? _buildInputImage(CameraImage image) {
     try {
       final allBytes = <int>[];
@@ -308,6 +391,12 @@ class MediaPipeDetector implements FaceDetectorInterface {
     _rightEarQueue.clear();
     _gazeXQueue.clear();
     _gazeYQueue.clear();
+    // Clear landmark smoothing queues so a fresh calibration starts clean
+    for (final q in [_llP1,_llP4,_llP2,_llP3,_llP6,_llP5,
+                     _rlP1,_rlP4,_rlP2,_rlP3,_rlP6,_rlP5]) {
+      q.clear();
+    }
+    _frameCounter = 0;
   }
 
   @override
@@ -353,8 +442,10 @@ class MediaPipeDetector implements FaceDetectorInterface {
       }
     }
 
-    // center of mass of darkest pixels
-    final threshold = minVal + 10;
+    // Weighted center-of-mass of darkest pixels.
+    // Threshold +25 captures full pupil disc (not just specular center);
+    // wider window gives a more stable centroid when viewing off-axis.
+    final threshold = minVal + 25;
     double sumX = 0, sumY = 0;
     int count = 0;
 

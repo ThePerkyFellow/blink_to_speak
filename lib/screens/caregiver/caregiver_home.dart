@@ -55,6 +55,7 @@ class CaregiverHome extends StatelessWidget {
   void _showGestureLegend(BuildContext context) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -132,42 +133,46 @@ class _GestureLegendSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(width: 40, height: 4, decoration: BoxDecoration(
-              color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2),
-            )),
-          ),
-          const SizedBox(height: 16),
-          Text('8 Eye Movement Building Blocks',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: cs.onSurface)),
-          const SizedBox(height: 12),
-          ..._items.map((item) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              children: [
-                Container(
-                  width: 36, height: 36,
-                  decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(8)),
-                  child: Center(child: Text(item.$1, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13))),
-                ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(item.$2, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                    Text(item.$3, style: TextStyle(fontSize: 12, color: cs.onSurface.withOpacity(0.55))),
-                  ],
-                ),
-              ],
+    final maxH = MediaQuery.of(context).size.height * 0.80;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxH),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(width: 40, height: 4, decoration: BoxDecoration(
+                color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2),
+              )),
             ),
-          )),
-        ],
+            const SizedBox(height: 16),
+            Text('8 Eye Movement Building Blocks',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: cs.onSurface)),
+            const SizedBox(height: 12),
+            ..._items.map((item) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(8)),
+                    child: Center(child: Text(item.$1, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13))),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(item.$2, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                      Text(item.$3, style: TextStyle(fontSize: 12, color: cs.onSurface.withOpacity(0.55))),
+                    ],
+                  ),
+                ],
+              ),
+            )),
+          ],
+        ),
       ),
     );
   }
