@@ -1,0 +1,27 @@
+Blink-to-Speak Gesture Classifier - Training Report
+============================================================
+
+Training examples: 34000
+Validation examples: 6000
+Real data examples: 0
+
+              precision    recall  f1-score   support
+
+     neutral      1.000     1.000     1.000      1200
+       blink      1.000     1.000     1.000      1200
+        shut      1.000     1.000     1.000      1200
+      wink_L      1.000     1.000     1.000      1200
+      wink_R      1.000     1.000     1.000      1200
+
+    accuracy                          1.000      6000
+   macro avg      1.000     1.000     1.000      6000
+weighted avg      1.000     1.000     1.000      6000
+
+Confusion matrix:
+[[1200    0    0    0    0]
+ [   0 1200    0    0    0]
+ [   0    0 1200    0    0]
+ [   0    0    0 1200    0]
+ [   0    0    0    0 1200]]
+
+Model size: 37.3 KB

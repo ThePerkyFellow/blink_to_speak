@@ -9,6 +9,13 @@ class FaceData {
   /// Eye Aspect Ratio for right eye
   final double rightEAR;
 
+  /// Neural eye-open probability left eye: 0.0 = closed, 1.0 = fully open.
+  /// Computed by ML Kit FaceDetector classification — pose-corrected, no threshold needed.
+  final double eyeOpenProbLeft;
+
+  /// Neural eye-open probability right eye.
+  final double eyeOpenProbRight;
+
   /// Normalised horizontal gaze: -1.0 (far left) … 0.0 (centre) … +1.0 (far right)
   final double gazeX;
 
@@ -50,6 +57,8 @@ class FaceData {
     required this.irisY,
     required this.faceDetected,
     required this.timestamp,
+    this.eyeOpenProbLeft  = 1.0,
+    this.eyeOpenProbRight = 1.0,
     this.leftEyeContour  = const [],
     this.rightEyeContour = const [],
     this.faceRect        = Rect.zero,
